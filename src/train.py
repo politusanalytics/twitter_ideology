@@ -21,7 +21,7 @@ device_ids = [int(i) for i in sys.argv[4].split(",")]
 max_seq_length = 64
 batch_size = 32
 dev_ratio = 0.1
-binary = False
+binary = True
 repo_path = "/home/username/twitter_ideology"
 
 train_filename = "{}/data/adjudicated_20230213/{}/train.json".format(repo_path, module_and_task)
@@ -79,6 +79,7 @@ if device.type == "cuda":
 
 tokenizer = None
 criterion = torch.nn.BCEWithLogitsLoss() if len(label_list) == 2 else torch.nn.CrossEntropyLoss(ignore_index=-1)
+binary = len(label_list) == 2
 
 def test_model(encoder, classifier, dataloader):
     all_preds = []
@@ -166,9 +167,9 @@ def build_model(train_examples, dev_examples, pretrained_model, n_epochs=10, cur
     encoder = AutoModel.from_pretrained(pretrained_model)
     classifier = torch.nn.Linear(encoder.config.hidden_size, 1 if len(label_list) == 2 else len(label_list))
 
-    train_dataset = TransformersData(train_examples, label_to_idx, tokenizer, max_seq_length=max_seq_length, has_token_type_ids=has_token_type_ids)
+    train_dataset = TransformersData(train_examples, label_to_idx, tokenizer, binary=binary, max_seq_length=max_seq_length, has_token_type_ids=has_token_type_ids)
     train_dataloader = DataLoader(dataset=train_dataset, batch_size=batch_size, shuffle=True, drop_last=True)
-    dev_dataset = TransformersData(dev_examples, label_to_idx, tokenizer, max_seq_length=max_seq_length, has_token_type_ids=has_token_type_ids)
+    dev_dataset = TransformersData(dev_examples, label_to_idx, tokenizer, binary=binary, max_seq_length=max_seq_length, has_token_type_ids=has_token_type_ids)
     dev_dataloader = DataLoader(dataset=dev_dataset, batch_size=batch_size)
 
 
@@ -282,7 +283,7 @@ if __name__ == '__main__':
 
     if predict:
         test_examples = get_examples(test_filename, with_label=False)
-        test_dataset = TransformersData(test_examples, label_to_idx, tokenizer, max_seq_length=max_seq_length, has_token_type_ids=has_token_type_ids, with_label=False)
+        test_dataset = TransformersData(test_examples, label_to_idx, tokenizer, binary=binary, max_seq_length=max_seq_length, has_token_type_ids=has_token_type_ids, with_label=False)
         test_dataloader = DataLoader(dataset=test_dataset, batch_size=batch_size)
 
         all_preds = model_predict(encoder, classifier, test_dataloader)
@@ -296,7 +297,7 @@ if __name__ == '__main__':
 
     else:
         test_examples = get_examples(test_filename)
-        test_dataset = TransformersData(test_examples, label_to_idx, tokenizer, max_seq_length=max_seq_length, has_token_type_ids=has_token_type_ids)
+        test_dataset = TransformersData(test_examples, label_to_idx, tokenizer, binary=binary, max_seq_length=max_seq_length, has_token_type_ids=has_token_type_ids)
         test_dataloader = DataLoader(dataset=test_dataset, batch_size=batch_size)
 
         result, test_loss = test_model(encoder, classifier, test_dataloader)
