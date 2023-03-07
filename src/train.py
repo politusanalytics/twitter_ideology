@@ -20,7 +20,7 @@ device_ids = [int(i) for i in sys.argv[4].split(",")]
 
 # MUST SET THESE VALUES
 max_seq_length = 64
-batch_size = 32
+batch_size = 64
 dev_ratio = 0.1
 
 repo_path = "/home/username/twitter_ideology"
@@ -164,7 +164,6 @@ def test_model2(encoder, classifier, dataloader):
     result = {}
     for i in all_preds.keys():
         curr_label = idx_to_label[i]
-        print(curr_label)
 
         curr_label_preds = all_preds[i]
         curr_label_gold = all_label_ids[i]
@@ -307,7 +306,10 @@ if __name__ == '__main__':
     if not only_test:
         encoder, classifier = build_model(train_examples, dev_examples, pretrained_transformers_model, n_epochs=num_epochs, curr_model_path=model_path)
         classifier.load_state_dict(torch.load(repo_path + "/models/classifier_" + model_path))
-        encoder.module.load_state_dict(torch.load(repo_path + "/models/encoder_" + model_path))
+        if hasattr(encoder, 'module'):
+            encoder.module.load_state_dict(torch.load(repo_path + "/models/encoder_" + model_path))
+        else:
+            encoder.load_state_dict(torch.load(repo_path + "/models/encoder_" + model_path))
     else:
         tokenizer = AutoTokenizer.from_pretrained(pretrained_transformers_model)
         encoder = AutoModel.from_pretrained(pretrained_transformers_model)
@@ -343,11 +345,14 @@ if __name__ == '__main__':
         test_dataset = TransformersData(test_examples, label_to_idx, tokenizer, max_seq_length=max_seq_length, has_token_type_ids=has_token_type_ids)
         test_dataloader = DataLoader(dataset=test_dataset, batch_size=batch_size)
 
-        result, test_loss = test_model(encoder, classifier, test_dataloader)
+        result, test_loss = test_model2(encoder, classifier, test_dataloader)
         result["test_loss"] = test_loss
 
         print("***** TEST RESULTS *****")
         for key in sorted(result.keys()):
             print("  %s = %.6f" %(key, result[key]))
 
+        result, test_loss = test_model(encoder, classifier, test_dataloader)
+        for key in sorted(result.keys()):
+            print("  %s = %.6f" %(key, result[key]))
         print("TEST SCORE: %.6f" %result[dev_metric])
