@@ -14,6 +14,7 @@ import gzip
 
 # INPUTS
 database_or_input_filename = sys.argv[1]
+module_name = sys.argv[2]
 
 # MUST SET THESE VALUES
 output_filename = "out.json"
@@ -21,8 +22,6 @@ pretrained_transformers_model = "dbmdz/bert-base-turkish-128k-cased"
 max_seq_length = 64
 batch_size = 1536
 repo_path = "/home/username/twitter_ideology"
-
-module_name = "ideology_2"
 
 if module_name == "ideology_1":
     idx_to_label = ["turkish_nationalism", "conservatism", "islamism", "liberalism", "kemalism"]
@@ -33,6 +32,22 @@ elif module_name == "ideology_2":
                     "kurdish_national_movement", "secularism"]
     encoder_path = "{}/models/best_models/multi_label/encoder_dbmdz_bert-base-turkish-128k-cased_ideology_2_62.pt".format(repo_path)
     classifier_path = "{}/models/best_models/multi_label/classifier_dbmdz_bert-base-turkish-128k-cased_ideology_2_62.pt".format(repo_path)
+
+query = {"text": {"$nin": ["", None]}, module_name: None}
+
+# See if there is anything to predict
+if database_or_input_filename == "database":
+    import pymongo
+    from pymongo import UpdateOne
+    # Connect to mongodb
+    mongo_client = pymongo.MongoClient("mongodb://localhost:27017/")
+    db = mongo_client["politus_twitter"]
+    tweet_col = db["tweets"]
+
+    num_tweets_to_predict = tweet_col.count_documents(query)
+    if num_tweets_to_predict == 0:
+        print("No documents to predict. Exiting...")
+        sys.exit(0)
 
 device = torch.device("cuda")
 
@@ -93,16 +108,10 @@ def read_json_line(data):
     return id_str, text
 
 if __name__ == "__main__":
+    total_processed = 0
     if database_or_input_filename == "database": # if database
-        import pymongo
-
-        # Connect to mongodb
-        mongo_client = pymongo.MongoClient("mongodb://localhost:27017/")
-        db = mongo_client["politus_twitter"]
-        tweet_col = db["tweets"]
-
         # NOTE: This find can be changed according to the task.
-        tweets_to_predict = tweet_col.find({module_name: None}, ["_id", "text"])
+        tweets_to_predict = tweet_col.find(query, ["_id", "text"])
 
         curr_batch = []
         for i, tweet in enumerate(tweets_to_predict):
@@ -110,6 +119,7 @@ if __name__ == "__main__":
             text = preprocess(tweet["text"])
 
             if len(text) > 0:
+                total_processed += 1
                 curr_batch.append({"_id": id_str, "text": text})
 
             if len(curr_batch) == batch_size:
@@ -130,6 +140,7 @@ if __name__ == "__main__":
             inputs = tokenizer(texts, return_tensors="pt", padding="max_length", truncation=True,
                                max_length=max_seq_length)
             preds = model_predict(inputs)
+
             for pred_idx, pred in enumerate(preds):
                 curr_d = curr_batch[pred_idx]
                 tweet_col.update_one({"_id": curr_d["_id"]}, {"$set": {module_name: pred}})
@@ -150,6 +161,7 @@ if __name__ == "__main__":
             id_str, text = read_json_line(data)
 
             if len(text) > 0:
+                total_processed += 1
                 curr_batch.append({"id_str": id_str, "text": text})
 
             if len(curr_batch) == batch_size:
@@ -180,3 +192,5 @@ if __name__ == "__main__":
                 output_file.write(json.dumps(curr_d, ensure_ascii=False) + "\n")
 
         output_file.close()
+
+    print("Processed {} tweets in total.".format(str(total_processed)))
